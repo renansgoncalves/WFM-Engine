@@ -7,9 +7,14 @@ PATHS = {
     'engagements': os.path.join("data", "engagements.csv"),
     'breaks': os.path.join("data", "breaks.csv"),
     'consultores_info': os.path.join("data", "consultores_info.csv"),
-    'sheets_out': os.path.join(OUT_DIR, "sheets_relatorio.xlsx"),
-    'excel_out': os.path.join(OUT_DIR, "excel_relatorio.xlsx")
+    'excel_out': os.path.join(OUT_DIR, "excel_relatorio.xlsx"),
+    'bi_out': os.path.join(OUT_DIR, "bi_database.csv")
 }
+
+# Constantes numéricas flutuantes para cálculos de tempo e ociosidade
+MAX_IDLE_GAP_SECONDS = 3600.0
+SECONDS_IN_MINUTE = 60.0
+SECONDS_IN_DAY = 86400.0
 
 STATUS_PROD = {"Negociando", "Agendamento", "CLIENTE JA FECHADO", "ENGANO", "FALECIDO", "LIGACAO_CAIU_COM_CLIENTE", "LIGAR DEPOIS", "MARGEM_NEGATIVA", "NAO LIGAR - LIGACAO IMPORTUNA", "NAO_ASSINA", "NAO_ESTA", "PROPOSTA_WHATSAPP", "RECUSOU_OUVIR_A_PROPOSTA", "SEM INTERESSE", "SEM_MARGEM", "SEM_PORT", "SEM_POSSIBILIDADES", "VENDA_FEITA"}
 STATUS_NEG = {"SEM INTERESSE", "RECUSOU_OUVIR_A_PROPOSTA"}

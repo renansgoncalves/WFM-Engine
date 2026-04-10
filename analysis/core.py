@@ -8,16 +8,14 @@ class WFMProcessor:
     
     # --- 1. INICIALIZAÇÃO ---
     def __init__(self):
-        self.now = datetime.now() # Trava o relógio no momento exato da execução para o cálculo de "Tempo Não Tabelado" de hoje
+        self.now = datetime.now()
 
     # --- 2. TRATAMENTO DE CADASTRO ---
     def process_info(self, path: str) -> pd.DataFrame:
         try:
-            # Lê o CSV ignorando erros de delimitador (sep=None) e problemas de codificação (utf-8-sig)
             df = pd.read_csv(path, sep=None, engine='python', encoding='utf-8-sig')
             df.columns = df.columns.str.strip().str.upper()
             
-            # Função interna flexível para buscar colunas que mudam de nome (ex: 'NOME' vs 'CONSULTOR')
             def get_col(cols: list, default: str = '') -> pd.Series:
                 return next((df[c].astype(str).str.strip().replace('nan', '') for c in cols if c in df.columns), pd.Series(default, index=df.index))
             
@@ -30,57 +28,56 @@ class WFMProcessor:
                 'CARGA_HORARIA_RAW': get_col(['CARGA HORÁRIA', 'CARGA HORARIA'])
             })
         except Exception:
-            return pd.DataFrame() # Falha silenciosa segura retornando dataframe vazio
+            return pd.DataFrame()
 
     # --- 3. LIMPEZA DE LIGAÇÕES ---
     def clean_engagements(self, path: str) -> pd.DataFrame:
         df = pd.read_csv(path, sep=';', encoding='utf-8').drop_duplicates()
         
-        if 'COD_USUARIO' in df.columns:
-            df.rename(columns={'COD_USUARIO': 'Atendente', 'Tabulacao': 'Status'}, inplace=True)
-            df['Hora'] = df['Data'].astype(str) + " " + df['Inicio_Contato'].astype(str)
+        df.columns = df.columns.str.strip().str.replace(' ', '_')
+            
+        df['Data_Hora_Str'] = df['Data'].astype(str) + " " + df['Inicio_Contato'].astype(str)
         
-        df['Atendente'] = df['Atendente'].astype(str).str.split('_').str[0].str.strip().str.upper() # Limpa sufixos do discador
-        df = df[~df['Atendente'].isin(['ABANDONADA', 'NONE'])] # Remove ligações que não foram para atendentes reais
+        df['Atendente'] = df['Atendente'].astype(str).str.split('_').str[0].str.strip().str.upper()
+        df = df[~df['Atendente'].isin(['ABANDONADA', 'NONE'])]
         df['Status'] = df.get('Status', pd.Series([''] * len(df))).fillna('')
-        df['Hora_dt'] = pd.to_datetime(df['Hora'].str.replace('"', ''), dayfirst=True, errors='coerce')
+        
+        df['Hora_dt'] = pd.to_datetime(df['Data_Hora_Str'].str.replace('"', ''), dayfirst=True, errors='coerce')
         
         end_time = pd.to_datetime(df['Fim_Contato'], format='%H:%M:%S', errors='coerce')
         start_time = pd.to_datetime(df['Inicio_Contato'], format='%H:%M:%S', errors='coerce')
         
-        # Calcula a duração de todas as chamadas de uma vez só
         df['Tempo'] = (end_time - start_time).dt.total_seconds().fillna(0.0)
-        
-        # Se a chamada começou 23h e terminou 00h, o tempo ficaria negativo. Isso corrige somando as horas do dia.
         df['Tempo'] = np.where(df['Tempo'] < 0.0, df['Tempo'] + SECONDS_IN_DAY, df['Tempo'])
         df['Hora_fim_dt'] = df['Hora_dt'] + pd.to_timedelta(df['Tempo'], unit='s')
         
         return df.drop_duplicates(subset=['Atendente', 'Hora_dt'])
 
-    # --- 4. LIMPEZA DE PAUSAS ---
+    # --- 4. SANITIZAÇÃO DE PAUSAS ---
     def clean_breaks(self, path: str, df_info: pd.DataFrame) -> pd.DataFrame:
         df = pd.read_csv(path, sep=';', encoding='utf-8').drop_duplicates()
         df['OPERADOR'] = df['OPERADOR'].astype(str).str.split('_').str[0].str.strip().str.upper()
         df['inicio_dt'] = pd.to_datetime(df['Data_INICIO'] + ' ' + df['INICIO_PAUSA'], dayfirst=True, errors='coerce')
         df['fim_dt'] = pd.to_datetime(df['DATA_FIM'] + ' ' + df['FINAL_PAUSA'], dayfirst=True, errors='coerce')
         
-        exit_map = df_info.set_index('CONSULTOR')['SAIDA'].to_dict() # Mapa com o horário de ir embora de cada um
+        exit_map = df_info.set_index('CONSULTOR')['SAIDA'].to_dict()
         
-        # Função para corrigir operadores que esqueceram de deslogar a pausa
         def sanitize_break(row):
             start_dt = row['inicio_dt']
-            if pd.notnull(row['fim_dt']) and row['fim_dt'] > start_dt:
-                return row['fim_dt'] # Pausa normal, finalizada corretamente
+            
+            if pd.notnull(row['fim_dt']) and row['fim_dt'] >= start_dt:
+                return row['fim_dt'] 
                 
+            # Protocolo de sanitização para pausas esquecidas abertas
             exit_str = str(exit_map.get(row['OPERADOR'], "")).strip()
             if exit_str and ":" in exit_str:
                 try:
                     exit_dt = pd.to_datetime(f"{start_dt.strftime('%Y-%m-%d')} {exit_str}")
                     if exit_dt > start_dt:
-                        return exit_dt # Corta a pausa no horário que ele deveria ir embora
+                        return exit_dt 
                 except Exception:
                     pass
-            return self.now if start_dt.date() == self.now.date() else start_dt # Se for hoje e não tem saída, corta no momento atual
+            return self.now if start_dt.date() == self.now.date() else start_dt
 
         df['fim_dt'] = df.apply(sanitize_break, axis=1)
         subset_cols = ['OPERADOR', 'inicio_dt', 'PAUSA'] if 'PAUSA' in df.columns else ['OPERADOR', 'inicio_dt']
@@ -94,35 +91,30 @@ class WFMProcessor:
         calls.sort(key=lambda x: x[0])
         idle_seconds = 0.0
         
-        # Itera comparando o fim de uma ligação com o início da próxima
         for (curr_start, curr_end), (next_start, next_end) in zip(calls, calls[1:]):
             gap = (next_start - curr_end).total_seconds()
             
-            # Se o buraco for entre 0 segundos e o limite configurado (ex: 1 hora)
             if 0.0 < gap <= MAX_IDLE_GAP_SECONDS:
-                
-                # Verifica se o buraco temporal da ociosidade se cruza com alguma pausa
                 if not any(max(curr_end, break_start) < min(next_start, break_end) for break_start, break_end in breaks):
-                    idle_seconds += gap # Só contabiliza como ocioso se não estava em pausa
+                    idle_seconds += gap 
                     
         return idle_seconds / SECONDS_IN_MINUTE
 
     # --- 6. MOTOR DE AGREGAÇÃO DE MÉTRICAS ---
     def get_metrics(self, df_eng: pd.DataFrame, df_brk: pd.DataFrame, df_info: pd.DataFrame) -> pd.DataFrame:
         
-        # --- 6.1. Agregação de Acionamentos ---
         def aggregate_engagements(group):
             status_col = group['Status']
             productive = group[status_col.isin(STATUS_PROD)]
             
             cpc_calls = productive[~productive['Status'].isin(CPC_IGNORE)]
             cpc_count = len(cpc_calls)
-            cpc_total_minutes = cpc_calls['Tempo'].sum() / SECONDS_IN_MINUTE
-            avg_cpc_time = cpc_total_minutes / cpc_count if cpc_count > 0 else 0.0 # Impede divisão por zero
             
-            # Monta a "linha" de cada operador baseada na soma de seus status
+            cpc_total_minutes = cpc_calls['Tempo'].sum() / SECONDS_IN_MINUTE
+            avg_cpc_time = cpc_total_minutes / cpc_count if cpc_count > 0 else 0.0
+            
             return pd.Series({
-                'DATA': str(group['Hora'].iloc[0]).split(' ')[0],
+                'DATA': str(group['Data'].iloc[0]),
                 'NÚMERO DE ACIONAMENTOS': len(group),
                 'ACIONAMENTOS PRODUTIVOS': len(productive),
                 'TEMPO EM LIGAÇÃO_raw': group['Tempo'].sum() / SECONDS_IN_MINUTE,
@@ -141,7 +133,6 @@ class WFMProcessor:
             
         rep_eng = df_eng.groupby('Atendente').apply(aggregate_engagements, include_groups=False).reset_index().rename(columns={'Atendente': 'CONSULTOR'})
 
-        # --- 6.2. Agregação de Pausas ---
         def aggregate_breaks(group):
             total_pause, lunch, bathroom, num_breaks = 0.0, 0.0, 0.0, 0
             for row in group.itertuples():
@@ -165,10 +156,8 @@ class WFMProcessor:
             
         rep_brk = df_brk.groupby('OPERADOR').apply(aggregate_breaks, include_groups=False).reset_index().rename(columns={'OPERADOR': 'CONSULTOR'})
 
-        # Unifica todas as bases em um dataframe final usando o nome do consultor
         df = rep_eng.merge(rep_brk, on='CONSULTOR', how='left').fillna(0.0).merge(df_info, on='CONSULTOR', how='left').fillna('')
         
-        # --- 6.3. Cálculo de ociosidade e tempo não tabelado final ---
         calls_map = df_eng.groupby('Atendente').apply(lambda g: list(zip(g['Hora_dt'], g['Hora_fim_dt']))).to_dict()
         breaks_map = df_brk.groupby('OPERADOR').apply(lambda g: list(zip(g['inicio_dt'], g['fim_dt']))).to_dict()
         df['TEMPO DE OCIOSIDADE_raw'] = df['CONSULTOR'].apply(lambda c: self.calc_idleness(calls_map.get(c, []), breaks_map.get(c, [])))
@@ -186,9 +175,6 @@ class WFMProcessor:
             current_minutes = self.now.hour * SECONDS_IN_MINUTE + self.now.minute
             
             is_past_date = pd.to_datetime(row.get('DATA', ''), dayfirst=True).date() < self.now.date()
-            
-            # Define o "tempo esperado" base: cobra a carga inteira de dias passados
-            # Para o dia atual, cobra apenas as horas passadas até o "agora"
             base_time = workload if is_past_date or current_minutes >= expected_exit else max(0.0, current_minutes - entry_time)
             
             return max(0.0, base_time - (total_pauses + row.get('TEMPO EM LIGAÇÃO_raw', 0.0)))

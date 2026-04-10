@@ -5,6 +5,7 @@ import time
 import tkinter as tk
 from tkinter import messagebox
 from tkcalendar import Calendar
+from datetime import timedelta  # Importação necessária para a matemática de dias
 
 SCRAPER_SCRIPT = "scraper/main.py"
 ANALYSIS_SCRIPT = "analysis/main.py"
@@ -28,18 +29,54 @@ def prompt_for_date(root: tk.Tk) -> str:
 
     selected_date = [""]
 
-    def on_closing():
+    def on_closing(event=None):
         selected_date[0] = None
         top.destroy()
 
     top.protocol("WM_DELETE_WINDOW", on_closing)
+    top.bind("<Escape>", on_closing) # Pressionar Esc cancela a operação
 
     cal = Calendar(top, selectmode='day', date_pattern='dd/mm/yyyy')
     cal.pack(pady=15, padx=20)
+    
+    # --- NAVEGAÇÃO PERSONALIZADA COM SETAS ---
+    def move_date(event):
+        try:
+            # Pega a data atual selecionada como um objeto de data real
+            current_date = cal.selection_get()
+            
+            # Adiciona ou subtrai dias com base na seta pressionada
+            if event.keysym == 'Left':
+                new_date = current_date - timedelta(days=1)
+            elif event.keysym == 'Right':
+                new_date = current_date + timedelta(days=1)
+            elif event.keysym == 'Up':
+                new_date = current_date - timedelta(days=7)
+            elif event.keysym == 'Down':
+                new_date = current_date + timedelta(days=7)
+            else:
+                return
 
-    def confirm():
+            # Atualiza o calendário visualmente
+            cal.selection_set(new_date)
+            cal.see(new_date) # Garante que a página mude de mês se passar do dia 30/31
+        except Exception:
+            pass
+
+    # Associa as setinhas do teclado à nossa nova função de movimento
+    top.bind('<Left>', move_date)
+    top.bind('<Right>', move_date)
+    top.bind('<Up>', move_date)
+    top.bind('<Down>', move_date)
+
+    cal.focus_set()
+
+    def confirm(event=None):
         selected_date[0] = cal.get_date()
         top.destroy()
+
+    # Associa a tecla Enter à função de confirmar
+    top.bind("<Return>", confirm)
 
     btn = tk.Button(top, text="Confirmar", command=confirm, bg="#4CAF50", fg="white", font=("Arial", 10, "bold"))
     btn.pack(pady=10)

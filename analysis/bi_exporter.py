@@ -1,18 +1,15 @@
 import pandas as pd
 import os
 
-def export_to_bi(df: pd.DataFrame, paths: dict):
-    """
-    Gera um arquivo plano (CSV) projetado para o Power BI.
-    Mantém os números flutuantes e colunas limpas para evitar conversões de string erradas no DAX.
-    """
+def export_to_bi(df: pd.DataFrame, paths: dict, col_order: list):
+    """Gera um arquivo plano ordenado e projetado para o Power BI."""
     df_bi = df.copy()
     
-    # Tratamento da média de tempo de ligações CPC para consumo otimizado no Power BI
-    if 'MEDIA_TEMPO_CPC_raw' in df_bi.columns:
-        df_bi['MEDIA TEMPO CPC (MINUTOS)'] = df_bi['MEDIA_TEMPO_CPC_raw'].round(2)
+    cols_to_drop = ['EQUIPE_INFO', 'DRIVE_ID']
+    df_bi.drop(columns=[c for c in cols_to_drop if c in df_bi.columns], inplace=True, errors='ignore')
     
-    # Exportação padronizada
-    bi_target = paths['bi_out']
-    df_bi.to_csv(bi_target, index=False, encoding='utf-8-sig', sep=';', decimal=',')
-    print(f"OK: Base de dados Power BI exportada em: {bi_target}")
+    available_columns = [col for col in col_order if col in df_bi.columns]
+    df_bi = df_bi[available_columns]
+    
+    df_bi.to_csv(paths['bi_out'], index=False, encoding='utf-8-sig', sep=';', decimal=',')
+    print(f"OK: Base de dados Power BI exportada em: {paths['bi_out']}")

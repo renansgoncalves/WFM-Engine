@@ -1,14 +1,20 @@
 import os
+from dotenv import load_dotenv
 
-OUT_DIR = os.path.join("output")
+load_dotenv()
+
+CLOUD_DIR = os.path.join("G:", "Meu Drive", "Relatórios da Equipe")
+OUT_DIR = os.path.join(CLOUD_DIR, "output")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 PATHS = {
     'engagements': os.path.join("data", "engagements.csv"),
     'breaks': os.path.join("data", "breaks.csv"),
     'consultores_info': os.path.join("data", "consultores_info.csv"),
-    'excel_out': os.path.join(OUT_DIR, "excel_relatorio.xlsx"),
+    'excel_out': os.path.join(CLOUD_DIR, "excel_relatorio.xlsx"),
     'bi_out': os.path.join(OUT_DIR, "bi_database.csv"),
+    'bi_timeline_out': os.path.join(OUT_DIR, "bi_timeline.csv"),
+    'external_sales': os.getenv('SHEETS_URL', '')
 }
 
 MAX_IDLE_GAP_SECONDS = 3600.0
@@ -38,3 +44,24 @@ BI_COL_ORDER = [
     'ALMOÇO_raw', 'BANHEIRO_raw',
     'AGENTE NÃO TABULOU', 'ENGANO', '% ENGANO', 'SEM POSSIBILIDADE', 'SEM MARGEM', 'SEM PORT'
 ]
+
+EVENT_MAPPING = {
+    "ALMOCO": "Almoço",
+    "BANHEIRO": "Banheiro",
+    "FEEDBACKGERENTE": "Feedback",
+    "TREINAMENTO": "Treinam.",
+    "PEQUENO_ALMOCO": "Peq. Almoço",
+    "RETORNOAOCLIENTE": "Retorno",
+    "PROBLEMAS_TECNICOS": "PT",
+    "FORMALIZACAO": "Formaliz.",
+    "EVIDENCIA": "Evidência",
+    "RETENCAO_CARTEIRA": "Retenção",
+    "PROPOSTA_WHATSAPP": "Prop. Whats",
+    "DESBLOQUEIO_DE_BENEFICIO": "Desbloq.",
+    "DIGITACAO": "Digitação",
+    "LIGACAO_WHATSAPP": "Lig. Whats",
+    "AJUDANDO_O_COLEGUINHA": "Aux. colega",
+    "REUNIAO": "Reunião",
+    "PLANILHA": "Planilha",
+    "LANCHE": "Lanche"
+}
